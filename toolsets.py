@@ -60,6 +60,7 @@ _HERMES_CORE_TOOLS = [
     "send_message",
     # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
+    "get_course_schedule",
 ]
 
 
@@ -172,6 +173,12 @@ TOOLSETS = {
     "session_search": {
         "description": "Search and recall past conversations with summarization",
         "tools": ["session_search"],
+        "includes": []
+    },
+    
+    "schedule": {
+        "description": "Query local course schedules from Excel timetables",
+        "tools": ["get_course_schedule"],
         "includes": []
     },
     

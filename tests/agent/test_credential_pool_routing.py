@@ -73,7 +73,13 @@ class TestGatewayTurnRoutePool:
 class TestEagerFallbackWithPool:
     """Test the eager fallback guard in run_agent.py's error handling loop."""
 
-    def _make_agent(self, has_pool=True, pool_has_creds=True, has_fallback=True):
+    def _make_agent(
+        self,
+        has_pool=True,
+        pool_has_creds=True,
+        has_fallback=True,
+        pool_entry_count=2,
+    ):
         """Create a minimal AIAgent mock with the fields needed."""
         from run_agent import AIAgent
 
@@ -84,6 +90,7 @@ class TestEagerFallbackWithPool:
         if has_pool:
             pool = MagicMock()
             pool.has_available.return_value = pool_has_creds
+            pool.entries.return_value = [MagicMock() for _ in range(pool_entry_count)]
             agent._credential_pool = pool
 
         agent._fallback_chain = [{"model": "fallback/model"}] if has_fallback else []
@@ -93,19 +100,43 @@ class TestEagerFallbackWithPool:
 
         return agent
 
-    def test_eager_fallback_deferred_when_pool_has_credentials(self):
-        """429 with active pool should NOT trigger eager fallback."""
-        agent = self._make_agent(has_pool=True, pool_has_creds=True, has_fallback=True)
+    def _pool_may_recover_for_eager_fallback(self, agent):
+        """Mirror run_agent.py eager-fallback guard (rate-limit path)."""
+        pool = agent._credential_pool
+        pool_may_recover = False
+        if pool is not None and pool.has_available():
+            try:
+                _pool_n = len(pool.entries())
+            except Exception:
+                _pool_n = 0
+            pool_may_recover = _pool_n > 1
+        return pool_may_recover
 
-        # Simulate the check from run_agent.py lines 7180-7191
+    def test_eager_fallback_deferred_when_multi_key_pool_has_credentials(self):
+        """429 with a multi-key pool should NOT trigger eager fallback."""
+        agent = self._make_agent(
+            has_pool=True, pool_has_creds=True, has_fallback=True, pool_entry_count=2,
+        )
+
         is_rate_limited = True
         if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-            pool = agent._credential_pool
-            pool_may_recover = pool is not None and pool.has_available()
-            if not pool_may_recover:
+            if not self._pool_may_recover_for_eager_fallback(agent):
                 agent._try_activate_fallback()
 
         agent._try_activate_fallback.assert_not_called()
+
+    def test_eager_fallback_fires_when_single_key_pool(self):
+        """429 with a 1-key pool cannot rotate — eager fallback should fire."""
+        agent = self._make_agent(
+            has_pool=True, pool_has_creds=True, has_fallback=True, pool_entry_count=1,
+        )
+
+        is_rate_limited = True
+        if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
+            if not self._pool_may_recover_for_eager_fallback(agent):
+                agent._try_activate_fallback()
+
+        agent._try_activate_fallback.assert_called_once()
 
     def test_eager_fallback_fires_when_no_pool(self):
         """429 without pool should trigger eager fallback."""
@@ -113,9 +144,7 @@ class TestEagerFallbackWithPool:
 
         is_rate_limited = True
         if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-            pool = agent._credential_pool
-            pool_may_recover = pool is not None and pool.has_available()
-            if not pool_may_recover:
+            if not self._pool_may_recover_for_eager_fallback(agent):
                 agent._try_activate_fallback()
 
         agent._try_activate_fallback.assert_called_once()
@@ -126,9 +155,7 @@ class TestEagerFallbackWithPool:
 
         is_rate_limited = True
         if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-            pool = agent._credential_pool
-            pool_may_recover = pool is not None and pool.has_available()
-            if not pool_may_recover:
+            if not self._pool_may_recover_for_eager_fallback(agent):
                 agent._try_activate_fallback()
 
         agent._try_activate_fallback.assert_called_once()
