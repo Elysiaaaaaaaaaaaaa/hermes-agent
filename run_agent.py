@@ -9882,12 +9882,19 @@ class AIAgent:
                         FailoverReason.billing,
                     )
                     if is_rate_limited and self._fallback_index < len(self._fallback_chain):
-                        # Don't eagerly fallback if credential pool rotation may
-                        # still recover.  The pool's retry-then-rotate cycle needs
-                        # at least one more attempt to fire — jumping to a fallback
-                        # provider here short-circuits it.
+                        # Don't eagerly fallback if a *multi-credential* pool may
+                        # still recover by rotating to another key.  A 1-key pool
+                        # cannot recover from a sustained 429 — treating
+                        # has_available() alone as "may recover" blocked eager
+                        # fallback until multiple failing retries completed.
                         pool = self._credential_pool
-                        pool_may_recover = pool is not None and pool.has_available()
+                        pool_may_recover = False
+                        if pool is not None and pool.has_available():
+                            try:
+                                _pool_n = len(pool.entries())
+                            except Exception:
+                                _pool_n = 0
+                            pool_may_recover = _pool_n > 1
                         if not pool_may_recover:
                             self._emit_status("⚠️ Rate limited — switching to fallback provider...")
                             if self._try_activate_fallback():

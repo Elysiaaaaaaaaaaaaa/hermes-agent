@@ -116,6 +116,11 @@ _RATE_LIMIT_PATTERNS = [
     "throttlingexception",
     "too many concurrent requests",
     "servicequotaexceededexception",
+    # z.ai / 智谱 GLM (bigmodel.cn) and similar CN backends (often HTTP 400 body)
+    "限流",
+    "请求过于频繁",
+    "并发过高",
+    "调用频率",
 ]
 
 # Usage-limit patterns that need disambiguation (could be billing OR rate_limit)
